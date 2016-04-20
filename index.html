@@ -1,0 +1,247 @@
+<html>
+<head>
+<link rel="manifest" href="/chrome/manifest.json">
+<script type="text/javascript" src="//code.jquery.com/jquery-2.1.4.min.js" ></script>
+<!-- Latest compiled and minified CSS -->
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" integrity="sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7" crossorigin="anonymous">
+
+<!-- Optional theme -->
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap-theme.min.css" integrity="sha384-fLW2N01lMqjakBkx3l/M9EahuwpSfeNvV63J5ezn3uZzapT0u7EYsXMjQV+0En5r" crossorigin="anonymous">
+<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.min.css" crossorigin="anonymous" type="text/css" media="screen"  />
+<!-- Latest compiled and minified JavaScript -->
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js" integrity="sha384-0mSbJDEHialfmuBBQP6A4Qrprq5OVfW37PRR3j5ELqxss1yVqOtnepnHVP9aJ7xS" crossorigin="anonymous"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.min.js"> </script>
+<script>
+var isPushEnabled = false;
+var httpEndpoint ='//android.googleapis.com/gcm/send';
+window.addEventListener('load', function() {  
+  var pushButton = document.querySelector('.js-push-button');  
+  pushButton.addEventListener('click', function() {  
+    if (isPushEnabled) {  
+      unsubscribe();  
+    } else {  
+      subscribe();  
+    }  
+  });
+  var pushMsg = document.querySelector('.js-push-msg');
+  if(pushMsg != null){
+	  pushMsg.addEventListener('click', function(){
+		 var regIds =[];
+		 var authKey = $('.hdn-key').val();
+		 regIds.push($('.lbl-subscription').html());
+		 var dataLoad = {"registration_ids": regIds};
+		 $.ajax({ 
+			type    : "POST",
+			cache   : false,
+			url     : httpEndpoint,
+			headers : { "Content-Type": "application/json", "Authorization": "key=" +authKey },
+			dataType: 'json',
+			data    : JSON.stringify(dataLoad),
+			 error:function (xhr, ajaxOptions, thrownError){
+						alert(xhr.status);
+						alert(thrownError);
+			 },
+			success : function(data) { 
+			$(".fancybox").html(JSON.stringify(data));
+			$(".fancybox").fancybox({
+				openEffect  : 'fade',
+				closeEffect : 'fade'
+			});
+				//$.fancybox(data); 
+					}
+		});
+	  });
+	}
+  // Check that service workers are supported, if so, progressively  
+  // enhance and add push messaging support, otherwise continue without it.  
+  if ('serviceWorker' in navigator) {  
+    navigator.serviceWorker.register('/chrome/service-worker.js')  
+    .then(initialiseState);  
+  } else {  
+    console.warn('Service workers aren\'t supported in this browser.');  
+  }  
+});
+function unsubscribe() {  
+  var pushButton = document.querySelector('.js-push-button');  
+  pushButton.disabled = true;
+
+  navigator.serviceWorker.ready.then(function(serviceWorkerRegistration) {  
+    // To unsubscribe from push messaging, you need get the  
+    // subscription object, which you can call unsubscribe() on.  
+    serviceWorkerRegistration.pushManager.getSubscription().then(  
+      function(pushSubscription) {  
+        // Check we have a subscription to unsubscribe  
+        if (!pushSubscription) {  
+          // No subscription object, so set the state  
+          // to allow the user to subscribe to push  
+          isPushEnabled = false;  
+          pushButton.disabled = false;  
+          pushButton.textContent = 'Enable Push Messages';  
+          return;  
+        }  
+
+        var subscriptionId = pushSubscription.subscriptionId;  
+        // TODO: Make a request to your server to remove  
+        // the subscriptionId from your data store so you
+        // don't attempt to send them push messages anymore
+
+        // We have a subscription, so call unsubscribe on it  
+        pushSubscription.unsubscribe().then(function(successful) {  
+          pushButton.disabled = false;  
+          pushButton.textContent = 'Enable Push Messages';  
+          isPushEnabled = false;  
+        }).catch(function(e) {  
+          // We failed to unsubscribe, this can lead to  
+          // an unusual state, so may be best to remove
+          // the users data from your data store and
+          // inform the user that you have done so
+
+          console.log('Unsubscription error: ', e);  
+          pushButton.disabled = false;
+          pushButton.textContent = 'Enable Push Messages';
+        });  
+      }).catch(function(e) {  
+        console.error('Error thrown while unsubscribing from push messaging.', e);  
+      });  
+  });  
+}
+function subscribe() {  
+  // Disable the button so it can't be changed while  
+  // we process the permission request  
+  var pushButton = document.querySelector('.js-push-button');  
+  pushButton.disabled = true;
+
+  navigator.serviceWorker.ready.then(function(serviceWorkerRegistration) {  
+    serviceWorkerRegistration.pushManager.subscribe({userVisibleOnly: true})  
+      .then(function(subscription) {  
+        // The subscription was successful  
+        isPushEnabled = true;  
+		var regId = subscription.endpoint.slice(subscription.endpoint.lastIndexOf('/')+1);
+		httpEndpoint = subscription.endpoint.slice(0,subscription.endpoint.lastIndexOf('/'));
+		$('.lbl-subscription').html(regId);
+        pushButton.textContent = 'Disable Push Messages';  
+        pushButton.disabled = false;
+		return;
+        // TODO: Send the subscription.endpoint to your server  
+        // and save it to send a push message at a later date
+        //return sendSubscriptionToServer(subscription);  
+      })  
+      .catch(function(e) {  
+        if (Notification.permission === 'denied') {  
+          // The user denied the notification permission which  
+          // means we failed to subscribe and the user will need  
+          // to manually change the notification permission to  
+          // subscribe to push messages  
+          console.warn('Permission for Notifications was denied');  
+          pushButton.disabled = true;  
+        } else {  
+          // A problem occurred with the subscription; common reasons  
+          // include network errors, and lacking gcm_sender_id and/or  
+          // gcm_user_visible_only in the manifest.  
+          console.error('Unable to subscribe to push.', e);  
+          pushButton.disabled = false;  
+          pushButton.textContent = 'Enable Push Messages';  
+        }  
+      });  
+  });  
+}
+// Once the service worker is registered set the initial state  
+function initialiseState() {  
+  // Are Notifications supported in the service worker?  
+  if (!('showNotification' in ServiceWorkerRegistration.prototype)) {  
+    console.warn('Notifications aren\'t supported.');  
+    return;  
+  }
+
+  // Check the current Notification permission.  
+  // If its denied, it's a permanent block until the  
+  // user changes the permission  
+  if (Notification.permission === 'denied') {  
+    console.warn('The user has blocked notifications.');  
+    return;  
+  }
+
+  // Check if push messaging is supported  
+  if (!('PushManager' in window)) {  
+    console.warn('Push messaging isn\'t supported.');  
+    return;  
+  }
+
+  // We need the service worker registration to check for a subscription  
+  navigator.serviceWorker.ready.then(function(serviceWorkerRegistration) {  
+    // Do we already have a push message subscription?  
+    serviceWorkerRegistration.pushManager.getSubscription()  
+      .then(function(subscription) {  
+        // Enable any UI which subscribes / unsubscribes from  
+        // push messages.  
+        var pushButton = document.querySelector('.js-push-button');  
+        pushButton.disabled = false;
+
+        if (!subscription) {  
+          // We aren't subscribed to push, so set UI  
+          // to allow the user to enable push  
+          return;  
+        }
+		var regId = subscription.endpoint.slice(subscription.endpoint.lastIndexOf('/')+1);
+		httpEndpoint = subscription.endpoint.slice(0,subscription.endpoint.lastIndexOf('/'));
+		$('.lbl-subscription').html(regId);
+        // Keep your server in sync with the latest subscriptionId
+        //sendSubscriptionToServer(subscription);
+
+        // Set your UI to show they have subscribed for  
+        // push messages  
+        pushButton.textContent = 'Disable Push Messages';  
+        isPushEnabled = true;  
+      })  
+      .catch(function(err) {  
+        console.warn('Error during getSubscription()', err);  
+      });  
+  });  
+}
+</script>
+</head>
+<body>
+<input type="hidden" class="hdn-key" value="AIzaSyDt5PnmxMy_PqHahDqiZMHCzjQH0bXCPFI" />
+<form class="form-horizontal">
+	<div class="form-group">
+    <div class="col-sm-offset-2 col-sm-10">
+      <button class="js-push-button btn btn-danger">Enable Push Messages</button>
+    </div>
+  </div>
+  <div class="form-group">
+    <label for="" class="col-sm-2 control-label">Registration ID</label>
+    <div class="col-sm-10">
+      <label class="lbl-subscription control-label" />
+    </div>
+  </div>
+  <div class="col-sm-offset-2 col-sm-10">
+      <div class="js-push-msg btn btn-primary">Send Push Notification</div>
+    </div>
+  </div>
+</form>
+<div class="container"><div class="row"><div class="fancybox" ></div></div></div>
+
+<!--
+{
+  "collapse_key": "score_update",
+  "time_to_live": 108,
+  "delay_while_idle": true,
+  "data": {
+    "score": "4x8",
+    "time": "15:16.2342"
+  },
+  "registration_ids":["eiPDUGG07Jc:APA91bFW1bMHwyAQH0D9rFnlxwFSqvIF6dPPSvRLe5TbNvJrq2fBlyBO1t8NH2veL-Y9WHFI25PdQ6y3qHsCF2J_migvfd8F_aiakQyDeshazFNNVCKkQPjJvbf7S-iRd8EIiWk6kQxI"]
+}
+{
+    "to" : "eiPDUGG07Jc:APA91bFW1bMHwyAQH0D9rFnlxwFSqvIF6dPPSvRLe5TbNvJrq2fBlyBO1t8NH2veL-Y9WHFI25PdQ6y3qHsCF2J_migvfd8F_aiakQyDeshazFNNVCKkQPjJvbf7S-iRd8EIiWk6kQxI",
+    "notification" : {
+      "body" : "great match!",
+      "title" : "Portugal vs. Denmark",
+      "icon" : "myicon"
+    }
+  }
+
+
+-->
+</body>
+</html>
